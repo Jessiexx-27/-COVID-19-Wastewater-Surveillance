@@ -1,0 +1,160 @@
+---
+title: "Project1_rf1.2"
+output: html_document
+---
+
+```{r}
+library(randomForest)
+# This library has nice date manipulation (ymd for example).
+
+library(lubridate)
+
+# This library has more intuitive string manipulation.
+
+library(stringr)
+
+# Load the sample prediction file.
+# We should replace the second column of this file with our predictions.
+
+pf = read.table('predictions.csv', header = T, row.names = NULL, sep = ',')
+# Read the first sheet of the data file.
+
+df1 = read.table('sheet1.csv', header = T, row.names = NULL, sep = ',')
+df2 = read.table('sheet2.csv', header = T, row.names = NULL, sep = ',')
+
+df21 = df2[df2[,2]== "Annacis Island",]
+df22 = df2[df2[,2]== "Iona Island",]
+df23 = df2[df2[,2]== "Lions Gate",]
+df24 = df2[df2[,2]== "Lulu Island",]
+df25 = df2[df2[,2]== "Northwest Langley",]
+
+# Set the first columns to date objects.
+
+df1[, 1] = ymd(df1[, 1])
+df21[, 1] = ymd(df21[, 1])
+df22[, 1] = ymd(df22[, 1])
+df23[, 1] = ymd(df23[, 1])
+df24[, 1] = ymd(df24[, 1])
+df25[, 1] = ymd(df25[, 1])
+
+df1 <- df1[!is.na(df1$Date), ]
+df21 <- df21[!is.na(df21$Date), ]
+df22 <- df22[!is.na(df22$Date), ]
+df23 <- df23[!is.na(df23$Date), ]
+df24 <- df24[!is.na(df24$Date), ]
+df25 <- df25[!is.na(df25$Date), ]
+
+# Preprocess df21 - only Annacis Island
+# because only Annacis Island, the name of plant doesn't matter, remove it
+df21[, 2] = NULL
+df22[, 2] = NULL
+df23[, 2] = NULL
+df24[, 2] = NULL
+df25[, 2] = NULL
+# change name for account col
+colnames(df21)[2] = "Count.to.date.Annacis.Island"
+colnames(df22)[2] = "Count.to.date.Iona.Island"
+colnames(df23)[2] = "Count.to.date.Lions.Gate"
+colnames(df24)[2] = "Count.to.date.Lulu.Island"
+colnames(df25)[2] = "Count.to.date.Northwest.Langley"
+
+# Get the first and last date.
+
+d1 = min(c(df1[, 1],df21[, 1],df22[, 1],df23[, 1],df24[, 1],df25[, 1]))
+d2 = max(c(df1[, 1],df21[, 1],df22[, 1],df23[, 1],df24[, 1],df25[, 1]))
+
+# Make range of dates under consideration.
+
+dates = seq(d1, d2, by = 'days')
+
+# Dataframe to use for join.
+
+df = data.frame(Date = dates)
+
+df = merge(x = df, y = df1, by = "Date", all.x = TRUE)
+df = merge(x = df, y = df21, by = "Date", all.x = TRUE)
+df = merge(x = df, y = df22, by = "Date", all.x = TRUE)
+df = merge(x = df, y = df23, by = "Date", all.x = TRUE)
+df = merge(x = df, y = df24, by = "Date", all.x = TRUE)
+df = merge(x = df, y = df25, by = "Date", all.x = TRUE)
+
+# Feed forward (copy the joined dataset)
+
+ff = df
+
+# For each column,
+
+for (j in 2:dim(ff)[2]) {
+  
+  # If we haven't observed anything yet, just predict 0.
+  
+  val = 0
+  
+  # Go through each date.
+  
+  for (i in 1:dim(ff)[1]) {
+    
+    # If we observe something, save it to fill in future.
+    
+    if (!is.na(ff[i,j])) {
+      val = ff[i, j]
+    } else {
+      
+      # Otherwise, use saved value.
+      
+      ff[i, j] = val
+    }
+  }
+}
+```
+```{r}
+f.RF = function(Xp, t, d) {
+    
+  X = Xp[,c(1:14)]
+  Y = c(Xp[-(1:d), 2], rep(NA, d))
+  
+  # Let's do a regression against row numbers.
+
+
+  # n is the number of not na
+  n = dim(X)[1] - d
+  xpp = X[1:n,]
+  xpp = xpp[,-2]
+  y = Y[1:n]
+  
+
+  model = randomForest(xpp,y)
+  X_test = X[c(n + d),]
+  solution = predict(model,X_test)
+  y = as.numeric(as.vector(solution))
+  
+  return (y)
+}
+```
+
+```{r}
+for (i in 1:100) {
+  
+  # We extract t and d.
+  
+  result = str_split(pf[i, 1], ':')
+  t = ymd(result[[1]][1])
+  d = as.numeric(result[[1]][2])
+  
+  # Compute X' given t and d.
+  
+  Xp = ff[ff[, 1] <= t - d, ]
+  
+  # Make a prediction.
+  
+  y = f.RF(Xp, t, d)
+  
+  # Modify our prediction data frame to reflect this prediction.
+  
+  pf[i, 2] = y
+}
+
+# Write our predictions out.
+write.table(pf, file = 'project1_RF(nowastewater).csv', sep = ',', quote = F, row.names = F)
+```
+
